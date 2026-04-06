@@ -3,6 +3,7 @@ import dropbox
 import yt_dlp
 import os
 import json
+import re
 from datetime import datetime
 
 # SoundCloud & Dropbox Configuration
@@ -23,7 +24,6 @@ SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
 def log_to_supabase(title, artist, status="success", progress=None, record_id=None):
     """Logs or updates the sync event in Supabase."""
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
-        print("Supabase configuration missing.")
         return None
 
     headers = {
@@ -39,7 +39,7 @@ def log_to_supabase(title, artist, status="success", progress=None, record_id=No
         "status": status
     }
     if progress is not None:
-        payload["progress"] = progress
+        payload["progress"] = int(progress)
 
     try:
         if record_id:
@@ -52,8 +52,10 @@ def log_to_supabase(title, artist, status="success", progress=None, record_id=No
         if response.status_code in [200, 201]:
             data = response.json()
             return data[0].get('id') if data else None
+        else:
+            print(f"🔍 Supabase Error {response.status_code}: {response.text}")
     except Exception as e:
-        print(f"Supabase log error: {e}")
+        print(f"Supabase log exception: {e}")
     return None
 
 def get_dbx_client():
@@ -64,14 +66,12 @@ def get_dbx_client():
     )
 
 def fetch_liked_tracks():
-    """Fetch the 10 most recent likes (or tracks from a playlist) using yt-dlp."""
+    """Fetch track entries using yt-dlp."""
     target_url = SC_PLAYLIST_URL
     if not target_url or "REPLACE_WITH_YOUR" in target_url:
         target_url = f"https://soundcloud.com/users/{SC_USER_ID}/likes"
-        print(f"🔍 SC_PLAYLIST_URL not set. Falling back to likes: {target_url}")
-    else:
-        print(f"🔍 Targeting playlist: {target_url}")
-
+    
+    print(f"🔍 Discovering: {target_url}")
     ydl_opts = {
         'extract_flat': True,
         'quiet': True,
@@ -83,10 +83,7 @@ def fetch_liked_tracks():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             result = ydl.extract_info(target_url, download=False)
             if 'entries' in result:
-                tracks = result['entries']
-                print(f"🔍 Found {len(tracks)} tracks via yt-dlp.")
-                log_to_supabase("Sync Activity", f"{len(tracks)} tracks found", "info")
-                return tracks
+                return result['entries']
             return []
     except Exception as e:
         print(f"❌ yt-dlp discovery error: {e}")
@@ -104,48 +101,65 @@ def sync_to_dropbox():
         log_to_supabase("System Check", "No new tracks found", "idle")
         return
 
-    for track in items:
-        title = track.get('title') or track.get('url', 'Unknown Title')
-        artist = track.get('uploader') or 'Unknown Artist'
-        url = track.get('url')
+    # One log card per job: Start with activity and reuse this ID
+    rid = log_to_supabase("Sync Activity", f"{len(items)} tracks found", "info")
+    print(f"🔍 Found {len(items)} tracks. Using Record ID: {rid}")
+
+    for i, item in enumerate(items):
+        url = item.get('url')
         if not url: continue
+        if url.startswith('/'): url = f"https://soundcloud.com{url}"
 
-        if url.startswith('/'):
-            url = f"https://soundcloud.com{url}"
+        # Fetch metadata for clean naming
+        try:
+            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'Unknown Title')
+                artist = info.get('uploader', 'Unknown Artist')
+        except:
+            title = item.get('title', 'Unknown Title')
+            artist = item.get('uploader', 'Unknown Artist')
 
-        clean_title = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_')]).strip()
-        dbx_path = f"/Music/Sync/{clean_title}.mp3"
+        print(f"📥 Downloading ({i+1}/{len(items)}): {title}...")
+        log_to_supabase(title, artist, status="downloading", progress=0, record_id=rid)
+        
+        last_sent_p = 0
+        def progress_hook(d):
+            nonlocal last_sent_p
+            if d['status'] == 'downloading':
+                # Extract percentage from yt-dlp dict
+                p = 0
+                if d.get('total_bytes'):
+                    p = (d['downloaded_bytes'] / d['total_bytes']) * 100
+                elif d.get('total_bytes_estimate'):
+                    p = (d['downloaded_bytes'] / d['total_bytes_estimate']) * 100
+                else:
+                    # Fallback to string parsing if bytes are missing
+                    p_str = re.sub(r'\x1b\[[0-9;]*m', '', d.get('_percent_str', '0%'))
+                    try: p = float(p_str.replace('%','').strip())
+                    except: pass
+                
+                p = int(p)
+                if p >= last_sent_p + 10 or p == 100:
+                    log_to_supabase(title, artist, "downloading", progress=p, record_id=rid)
+                    last_sent_p = p
+
+        ydl_opts = {
+            'outtmpl': 'temp_track.mp3',
+            'format': 'bestaudio/best',
+            'quiet': True,
+            'no_warnings': True,
+            'progress_hooks': [progress_hook],
+        }
 
         try:
-            dbx.files_get_metadata(dbx_path)
-            print(f"Skipping {title} - exists.")
-        except:
-            print(f"📥 Downloading: {title}...")
-            
-            # Initial log for the track
-            rid = log_to_supabase(title, artist, status="downloading", progress=0)
-            
-            last_p = 0
-            def progress_hook(d):
-                nonlocal last_p
-                if d['status'] == 'downloading':
-                    p_str = d.get('_percent_str', '0%').replace('%','').strip()
-                    try:
-                        p = int(float(p_str))
-                        if p >= last_p + 10 or p == 100:
-                            log_to_supabase(title, artist, "downloading", progress=p, record_id=rid)
-                            last_p = p
-                    except: pass
-
-            ydl_opts = {
-                'outtmpl': 'temp_track.mp3',
-                'format': 'bestaudio/best',
-                'quiet': True,
-                'no_warnings': True,
-                'progress_hooks': [progress_hook],
-            }
+            clean_name = "".join([c for c in f"{title} - {artist}" if c.isalnum() or c in (' ', '-', '_')]).strip()
+            dbx_path = f"/Music/Sync/{clean_name}.mp3"
 
             try:
+                dbx.files_get_metadata(dbx_path)
+                print(f"Skipping {title} - exists.")
+            except:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
 
@@ -155,15 +169,17 @@ def sync_to_dropbox():
                 with open("temp_track.mp3", "rb") as f:
                     dbx.files_upload(f.read(), dbx_path, mode=dropbox.files.WriteMode.overwrite)
 
-                log_to_supabase(title, artist, "success", record_id=rid)
                 print(f"✅ Success: {title}")
 
-            except Exception as e:
-                print(f"❌ Failed to sync {title}: {e}")
-                log_to_supabase(title, artist, "error", record_id=rid)
-            finally:
-                if os.path.exists("temp_track.mp3"):
-                    os.remove("temp_track.mp3")
+        except Exception as e:
+            print(f"❌ Failed to sync {title}: {e}")
+            log_to_supabase(title, artist, "error", record_id=rid)
+        finally:
+            if os.path.exists("temp_track.mp3"):
+                os.remove("temp_track.mp3")
+
+    # Final mark as success for the entire job
+    log_to_supabase(f"Sync Complete", f"{len(items)} tracks processed", "success", progress=100, record_id=rid)
 
 if __name__ == "__main__":
     if not all([SC_CLIENT_ID, SC_USER_ID, DBX_REFRESH_TOKEN]):
