@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoundDrop Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-[#0a0a0a] text-white font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- NEW PUBLISHABLE CONFIG ---
+        const SUPABASE_URL = "https://anrruvpfkyuiczciabpf.supabase.co";
+        // Use the new key format: sb_publishable_...
+        const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_CvovmnnKX4rX-U9rU4m7iA_2C-VqfR_";
+        
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+        const App = () => {
+            const [syncHistory, setSyncHistory] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const init = async () => {
+                    // Fetch initial history (Requires RLS 'SELECT' policy for 'anon' role)
+                    const { data, error } = await supabaseClient
+                        .from('sync_history')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(10);
+                    
+                    if (data) setSyncHistory(data);
+                    setLoading(false);
+
+                    // Subscribe to real-time updates
+                    const channel = supabaseClient
+                        .channel('schema-db-changes')
+                        .on('postgres_changes', 
+                            { event: 'INSERT', table: 'sync_history', schema: 'public' }, 
+                            (payload) => {
+                                setSyncHistory(prev => [payload.new, ...prev].slice(0, 10));
+                            }
+                        )
+                        .subscribe();
+
+                    return () => supabaseClient.removeChannel(channel);
+                };
+                init();
+            }, []);
+
+            useEffect(() => {
+                lucide.createIcons();
+            }, [loading, syncHistory]);
+
+            if (SUPABASE_PUBLISHABLE_KEY === "PASTE_YOUR_SB_PUBLISHABLE_KEY_HERE") {
+                return (
+                    <div className="flex items-center justify-center h-screen p-6 text-center">
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 p-8 rounded-2xl">
+                            <h2 className="text-xl font-bold text-emerald-500 mb-2">Connect Supabase</h2>
+                            <p className="text-sm opacity-60 italic mb-4">New API Key detected.</p>
+                            <p className="text-xs opacity-60">Paste your <b>sb_publishable_...</b> key into index.html to begin.</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen max-w-4xl mx-auto p-6 space-y-8">
+                    <header className="flex justify-between items-center border-b border-white/10 pb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-emerald-500 p-2 rounded-xl text-black shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+                                <i data-lucide="music"></i>
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-black italic tracking-tighter leading-none">SOUNDDROP</h1>
+                                <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest mt-1">Live Dashboard</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Secure Publishable Key
+                        </div>
+                    </header>
+
+                    <section className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div className="md:col-span-2 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-sm font-bold opacity-40 uppercase tracking-widest flex items-center gap-2">
+                                    <i data-lucide="list" className="w-4 h-4"></i> Live Sync Log
+                                </h2>
+                            </div>
+                            <div className="space-y-3">
+                                {syncHistory.length === 0 ? (
+                                    <div className="border border-dashed border-white/10 rounded-2xl p-16 text-center opacity-30 italic">
+                                        Waiting for logs from worker...
+                                    </div>
+                                ) : syncHistory.map(item => (
+                                    <div key={item.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center justify-between group hover:bg-white/[0.08] hover:border-emerald-500/30 transition-all cursor-default">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                                                <i data-lucide="disc"></i>
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-sm tracking-tight group-hover:text-emerald-400 transition-colors">{item.title}</p>
+                                                <p className="text-[10px] opacity-40 uppercase font-black tracking-tight">{item.artist} • {new Date(item.created_at).toLocaleTimeString()}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-[9px] font-black text-emerald-500 border border-emerald-500/20 bg-emerald-500/5 px-2 py-1 rounded-md tracking-tighter">
+                                            SYNCED
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-black rounded-2xl p-6 shadow-xl">
+                                <h3 className="font-bold flex items-center gap-2 mb-3 italic uppercase text-xs tracking-widest">
+                                    <i data-lucide="zap" className="w-4 h-4 fill-current"></i> Worker Node
+                                </h3>
+                                <p className="text-xs font-medium opacity-90 leading-relaxed">Your GitHub worker is authenticating via <b>sb_secret_</b>. It bypasses RLS to ensure logs are always written correctly.</p>
+                            </div>
+                            
+                            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
+                                <h3 className="text-[10px] font-bold opacity-40 uppercase tracking-widest">Endpoint Information</h3>
+                                <div className="space-y-3">
+                                    <div className="p-3 bg-black/40 rounded-lg border border-white/5">
+                                        <p className="text-[9px] opacity-40 uppercase font-bold mb-1">Project URL</p>
+                                        <p className="text-[10px] font-mono break-all">{SUPABASE_URL}</p>
+                                    </div>
+                                    <div className="p-3 bg-black/40 rounded-lg border border-white/5">
+                                        <p className="text-[9px] opacity-40 uppercase font-bold mb-1">Method</p>
+                                        <p className="text-[10px] font-mono">REST v2 / Opaque Keys</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
