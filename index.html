@@ -49,18 +49,20 @@
             };
 
             useEffect(() => {
+                let channel;
+
                 const init = async () => {
                     const { data: logs } = await supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(10);
                     if (logs) setSyncHistory(logs);
-                    
+
                     const { data: files } = await supabaseClient.from('dropbox_inventory').select('*').order('name', { ascending: true });
                     if (files) setInventory(files);
-                    
+
                     setLoading(false);
 
-                    const channel = supabaseClient.channel('db-changes')
+                    channel = supabaseClient.channel('db-changes')
                         .on('postgres_changes', { event: '*', table: 'sync_history', schema: 'public' }, (p) => {
-                            setIsWaitingForWorker(false); // Clear starting state on ANY event
+                            setIsWaitingForWorker(false);
                             if (p.eventType === 'INSERT') { setSyncHistory(prev => [p.new, ...prev].slice(0, 10)); }
                             else if (p.eventType === 'UPDATE') { setSyncHistory(prev => prev.map(i => i.id === p.new.id ? p.new : i)); }
                         })
@@ -69,10 +71,23 @@
                             if (data) setInventory(data);
                         })
                         .subscribe();
-
-                    return () => supabaseClient.removeChannel(channel);
                 };
+
                 init();
+
+                // Polling fallback — realtime subscription may miss events if not yet ready
+                const poll = setInterval(async () => {
+                    const { data } = await supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(10);
+                    if (data) {
+                        setSyncHistory(data);
+                        setIsWaitingForWorker(false);
+                    }
+                }, 5000);
+
+                return () => {
+                    clearInterval(poll);
+                    if (channel) supabaseClient.removeChannel(channel);
+                };
             }, []);
 
             useEffect(() => { lucide.createIcons(); }, [loading, syncHistory, inventory, isWaitingForWorker]);
@@ -161,7 +176,7 @@
                                     ) : inventory.map((file, idx) => (
                                         <div key={idx} className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-all group">
                                             <i data-lucide="file-audio" className="w-3 h-3 text-emerald-500/40 group-hover:text-emerald-500"></i>
-                                            <p className="text-[11px] font-medium truncate opacity-60 group-hover:opacity-100">{file.name}</p>
+                                            <p className="text-[11px] font-medium truncate opacity-60 group-hover:opacity-100">{file.name.replace(/\.mp3$/i, '')}</p>
                                         </div>
                                     ))}
                                 </div>
