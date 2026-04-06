@@ -20,49 +20,24 @@ DBX_REFRESH_TOKEN = os.getenv("DBX_REFRESH_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
 
-def log_to_supabase(title, artist, status="success", progress=None, record_id=None):
-    """Logs or updates the sync event in Supabase."""
-    if not SUPABASE_URL or not SUPABASE_SECRET_KEY: return None
+def upsert_track(url, title, artist, status, progress=None):
+    """Upsert a track's sync state into playlist_tracks (keyed by URL)."""
+    if not SUPABASE_URL or not SUPABASE_SECRET_KEY: return
     headers = {
         "apikey": SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "return=representation"
+        "Prefer": "resolution=merge-duplicates"
     }
-    payload = {"title": title, "artist": artist, "status": status}
+    payload = {
+        "url": url, "title": title, "artist": artist,
+        "status": status, "updated_at": datetime.utcnow().isoformat()
+    }
     if progress is not None: payload["progress"] = int(progress)
-
     try:
-        if record_id:
-            url = f"{SUPABASE_URL}/rest/v1/sync_history?id=eq.{record_id}"
-            response = requests.patch(url, headers=headers, json=payload)
-        else:
-            url = f"{SUPABASE_URL}/rest/v1/sync_history"
-            response = requests.post(url, headers=headers, json=payload)
-
-        if response.status_code in [200, 201]:
-            data = response.json()
-            return data[0].get('id') if data else None
+        requests.post(f"{SUPABASE_URL}/rest/v1/playlist_tracks?on_conflict=url", headers=headers, json=payload)
     except Exception as e:
-        print(f"Supabase log error: {e}")
-    return None
-
-def update_dropbox_inventory(dbx):
-    """Sync the Dropbox file list to Supabase inventory table."""
-    if not SUPABASE_URL or not SUPABASE_SECRET_KEY: return
-    try:
-        files = []
-        res = dbx.files_list_folder("/Music/Sync")
-        files.extend([f.name for f in res.entries if isinstance(f, dropbox.files.FileMetadata)])
-        while res.has_more:
-            res = dbx.files_list_folder_continue(res.cursor)
-            files.extend([f.name for f in res.entries if isinstance(f, dropbox.files.FileMetadata)])
-
-        headers = {"apikey": SUPABASE_SECRET_KEY, "Authorization": f"Bearer {SUPABASE_SECRET_KEY}", "Content-Type": "application/json"}
-        requests.delete(f"{SUPABASE_URL}/rest/v1/dropbox_inventory?id=gt.0", headers=headers)
-        payload = [{"name": f} for f in files[:100]]
-        if payload: requests.post(f"{SUPABASE_URL}/rest/v1/dropbox_inventory", headers=headers, json=payload)
-    except Exception as e: print(f"⚠️ Inventory update error: {e}")
+        print(f"Supabase error: {e}")
 
 def fetch_tracks():
     """Fetch track entries using yt-dlp flat extract."""
@@ -91,15 +66,14 @@ def sync_to_dropbox():
     items = fetch_tracks()
 
     if items is None or not items:
-        log_to_supabase("Sync Complete", "No tracks found", "idle")
-        update_dropbox_inventory(dbx)
+        print("No tracks found.")
         return
 
     # --- Phase 1: Discover & Queue ---
     # SoundCloud flat extract omits title/uploader, so a full per-track metadata fetch is
     # required to build the correct filename for the Dropbox existence check.
-    # New tracks get a 'queued' Supabase record immediately so the dashboard shows the
-    # full queue before any downloads begin.
+    # Every track is upserted to playlist_tracks immediately (synced or queued),
+    # so the dashboard shows the full playlist before downloads begin.
     print(f"📋 Scanning {len(items)} tracks against Dropbox...")
     tracks_to_download = []
     for item in items:
@@ -121,15 +95,15 @@ def sync_to_dropbox():
 
         try:
             dbx.files_get_metadata(dbx_path)
+            upsert_track(url, title, artist, "synced", progress=100)
             print(f"  ✓ exists: {clean_name}")
         except:
-            record_id = log_to_supabase(title, artist, "queued")
-            tracks_to_download.append({'title': title, 'artist': artist, 'url': url, 'dbx_path': dbx_path, 'record_id': record_id})
+            upsert_track(url, title, artist, "queued", progress=0)
+            tracks_to_download.append({'title': title, 'artist': artist, 'url': url, 'dbx_path': dbx_path})
             print(f"  + queued: {clean_name}")
 
     if not tracks_to_download:
-        log_to_supabase("Sync Complete", "All tracks up to date", "success", progress=100)
-        update_dropbox_inventory(dbx)
+        print("All tracks up to date.")
         return
 
     print(f"\n⬇️  Downloading {len(tracks_to_download)} new tracks...\n")
@@ -140,12 +114,11 @@ def sync_to_dropbox():
         artist = track['artist']
         url = track['url']
         dbx_path = track['dbx_path']
-        record_id = track['record_id']
 
-        log_to_supabase(title, artist, "downloading", progress=0, record_id=record_id)
+        upsert_track(url, title, artist, "downloading", progress=0)
 
         last_sent_p = 0
-        def progress_hook(d, _title=title, _artist=artist, _record_id=record_id):
+        def progress_hook(d, _url=url, _title=title, _artist=artist):
             nonlocal last_sent_p
             if d['status'] == 'downloading':
                 p = 0
@@ -157,7 +130,7 @@ def sync_to_dropbox():
                     except: pass
                 p = int(p)
                 if p >= last_sent_p + 10 or p == 100:
-                    log_to_supabase(_title, _artist, "downloading", progress=p, record_id=_record_id)
+                    upsert_track(_url, _title, _artist, "downloading", progress=p)
                     last_sent_p = p
 
         ydl_opts = {
@@ -177,19 +150,17 @@ def sync_to_dropbox():
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
-            log_to_supabase(title, artist, "uploading", progress=100, record_id=record_id)
+            upsert_track(url, title, artist, "uploading", progress=100)
             with open("temp_track.mp3", "rb") as f:
                 dbx.files_upload(f.read(), dbx_path, mode=dropbox.files.WriteMode.overwrite)
-            log_to_supabase(title, artist, "success", progress=100, record_id=record_id)
+            upsert_track(url, title, artist, "synced", progress=100)
         except Exception as e:
             print(f"❌ Error on {title}: {e}")
-            log_to_supabase(title, artist, "error", record_id=record_id)
+            upsert_track(url, title, artist, "error")
         finally:
             for ext in ['mp3', 'jpg', 'jpeg', 'png', 'webp']:
                 tmp = f"temp_track.{ext}"
                 if os.path.exists(tmp): os.remove(tmp)
-
-    update_dropbox_inventory(dbx)
 
 if __name__ == "__main__":
     if not all([SC_CLIENT_ID, SC_USER_ID, DBX_REFRESH_TOKEN]): print("Missing ENV vars")

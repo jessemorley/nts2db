@@ -37,16 +37,8 @@
         const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_CvovmnnKX4rX-U9rU4m7iA_2C-VqfR_";
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
-        const parseName = (name) => {
-            const clean = (name || '').replace(/\.mp3$/i, '');
-            const idx = clean.indexOf(' - ');
-            if (idx === -1) return { title: clean, artist: 'Unknown' };
-            return { title: clean.slice(0, idx), artist: clean.slice(idx + 3) };
-        };
-
-        const App = () => {
-            const [syncHistory, setSyncHistory] = useState([]);
-            const [inventory, setInventory] = useState([]);
+const App = () => {
+            const [tracks, setTracks] = useState([]);
             const [syncing, setSyncing] = useState(false);
             const [isWaitingForWorker, setIsWaitingForWorker] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
@@ -74,44 +66,29 @@
 
             useEffect(() => {
                 let channel;
-                const init = async () => {
-                    const { data: logs } = await supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(20);
-                    if (logs) setSyncHistory(logs);
-                    const { data: files } = await supabaseClient.from('dropbox_inventory').select('*').order('name', { ascending: true });
-                    if (files) setInventory(files);
+                const fetchTracks = async () => {
+                    const { data } = await supabaseClient.from('playlist_tracks').select('*').order('updated_at', { ascending: false });
+                    if (data) { setTracks(data); setIsWaitingForWorker(false); }
+                };
 
+                const init = async () => {
+                    await fetchTracks();
                     channel = supabaseClient.channel('db-changes')
-                        .on('postgres_changes', { event: '*', table: 'sync_history', schema: 'public' }, (p) => {
+                        .on('postgres_changes', { event: '*', table: 'playlist_tracks', schema: 'public' }, (p) => {
                             setIsWaitingForWorker(false);
-                            if (p.eventType === 'INSERT') setSyncHistory(prev => [p.new, ...prev].slice(0, 20));
-                            else if (p.eventType === 'UPDATE') setSyncHistory(prev => prev.map(i => i.id === p.new.id ? p.new : i));
-                        })
-                        .on('postgres_changes', { event: '*', table: 'dropbox_inventory', schema: 'public' }, async () => {
-                            const { data } = await supabaseClient.from('dropbox_inventory').select('*').order('name', { ascending: true });
-                            if (data) setInventory(data);
+                            if (p.eventType === 'INSERT') setTracks(prev => [p.new, ...prev]);
+                            else if (p.eventType === 'UPDATE') setTracks(prev => prev.map(t => t.id === p.new.id ? p.new : t));
                         })
                         .subscribe();
                 };
 
                 init();
-
-                const poll = setInterval(async () => {
-                    const [{ data: logs }, { data: files }] = await Promise.all([
-                        supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(20),
-                        supabaseClient.from('dropbox_inventory').select('*').order('name', { ascending: true }),
-                    ]);
-                    if (logs) { setSyncHistory(logs); setIsWaitingForWorker(false); }
-                    if (files) setInventory(files);
-                }, 5000);
-
-                return () => {
-                    clearInterval(poll);
-                    if (channel) supabaseClient.removeChannel(channel);
-                };
+                const poll = setInterval(fetchTracks, 5000);
+                return () => { clearInterval(poll); if (channel) supabaseClient.removeChannel(channel); };
             }, []);
 
-            // Derive active rows and worker status from sync_history
-            const activeRows = syncHistory.filter(r => r.status === 'downloading' || r.status === 'uploading');
+            // Derive status from active tracks
+            const activeRows = tracks.filter(t => t.status === 'downloading' || t.status === 'uploading');
             const isSyncing = isWaitingForWorker || activeRows.length > 0;
 
             let workerStatus = 'Idle';
@@ -121,44 +98,21 @@
                 const r = activeRows[0];
                 const pct = r.progress != null ? ` (${r.progress}%)` : '';
                 workerStatus = `${r.status.charAt(0).toUpperCase() + r.status.slice(1)}: ${r.title}${pct}`;
-            } else if (syncHistory.length > 0) {
-                const last = syncHistory[0];
-                workerStatus = `Last sync: ${last.title} — ${last.status}`;
+            } else if (tracks.length > 0) {
+                const synced = tracks.filter(t => t.status === 'synced').length;
+                workerStatus = `${synced} of ${tracks.length} tracks synced`;
             }
 
-            // Merge inventory with any currently active sync rows
-            const mergedLibrary = useMemo(() => {
-                const active = syncHistory.filter(r => r.status === 'downloading' || r.status === 'uploading');
-                const inventoryItems = inventory.map(f => ({
-                    id: f.id,
-                    name: (f.name || '').replace(/\.mp3$/i, ''),
-                    ...parseName(f.name),
-                    status: 'synced',
-                    progress: null,
-                }));
-                const inventoryNames = new Set(inventoryItems.map(i => i.name.toLowerCase()));
-                const activeItems = active
-                    .filter(r => !inventoryNames.has(`${r.title} - ${r.artist}`.toLowerCase()))
-                    .map(r => ({
-                        id: `active-${r.id}`,
-                        name: `${r.title} - ${r.artist}`,
-                        title: r.title,
-                        artist: r.artist,
-                        status: r.status,
-                        progress: r.progress,
-                    }));
-                return [...activeItems, ...inventoryItems];
-            }, [inventory, syncHistory]);
-
             const sortedLibrary = useMemo(() => {
-                let items = mergedLibrary.filter(item => {
+                const STATUS_ORDER = { downloading: 0, uploading: 1, queued: 2, error: 3, pending: 4, synced: 5 };
+                let items = tracks.filter(item => {
                     const s = `${item.title} ${item.artist}`.toLowerCase();
                     return s.includes(searchTerm.toLowerCase());
                 });
                 items.sort((a, b) => {
-                    // Active items pin to top
-                    if (a.status !== 'synced' && b.status === 'synced') return -1;
-                    if (a.status === 'synced' && b.status !== 'synced') return 1;
+                    const aActive = STATUS_ORDER[a.status] ?? 9;
+                    const bActive = STATUS_ORDER[b.status] ?? 9;
+                    if (aActive !== bActive) return aActive - bActive;
                     const aVal = (a[sortConfig.key] || '').toLowerCase();
                     const bVal = (b[sortConfig.key] || '').toLowerCase();
                     if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -166,7 +120,7 @@
                     return 0;
                 });
                 return items;
-            }, [mergedLibrary, searchTerm, sortConfig]);
+            }, [tracks, searchTerm, sortConfig]);
 
             const requestSort = (key) => {
                 setSortConfig(prev => ({
@@ -234,7 +188,7 @@
                         <div className="space-y-4">
                             <div className="space-y-3">
                                 <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 px-1">
-                                    Music Library ({mergedLibrary.length})
+                                    Music Library ({tracks.length})
                                 </h2>
                                 <div className="relative w-full">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none flex"><ISearch c="h-4 w-4" /></span>
@@ -280,12 +234,18 @@
                                                     <td className="px-4 align-middle">
                                                         <div className="flex flex-col gap-1.5 min-w-0">
                                                             <div className="flex items-center gap-3">
-                                                                <div className={`shrink-0 p-1.5 rounded-sm border transition-all ${file.status === 'synced' ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : 'bg-zinc-50 border-zinc-50 text-zinc-900'}`}>
+                                                                <div className={`shrink-0 p-1.5 rounded-sm border transition-all ${
+                                                                    file.status === 'synced'   ? 'bg-zinc-800 border-zinc-700 text-zinc-500' :
+                                                                    file.status === 'error'    ? 'bg-red-900/40 border-red-800 text-red-400' :
+                                                                                                 'bg-zinc-50 border-zinc-50 text-zinc-900'
+                                                                }`}>
                                                                     <IFileAudio c="h-3.5 w-3.5" />
                                                                 </div>
-                                                                <span className="font-medium text-sm truncate text-zinc-100">{file.title}</span>
+                                                                <span className={`font-medium text-sm truncate ${file.status === 'synced' ? 'text-zinc-100' : file.status === 'error' ? 'text-red-400' : 'text-zinc-50'}`}>
+                                                                    {file.title}
+                                                                </span>
                                                             </div>
-                                                            {file.status !== 'synced' && (
+                                                            {(file.status === 'downloading' || file.status === 'uploading') && (
                                                                 <div className="pl-10 pr-2">
                                                                     <div className="h-1 w-full bg-zinc-700 rounded-full overflow-hidden">
                                                                         <div
@@ -302,7 +262,11 @@
                                                     </td>
                                                     <td className="px-4 align-middle text-right">
                                                         {file.status !== 'synced' && (
-                                                            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-zinc-400 bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                            <span className={`inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap border ${
+                                                                file.status === 'error'                                    ? 'text-red-400 bg-red-900/30 border-red-800' :
+                                                                file.status === 'downloading' || file.status === 'uploading' ? 'text-zinc-50 bg-zinc-700 border-zinc-600' :
+                                                                                                                               'text-zinc-500 bg-zinc-800 border-zinc-700'
+                                                            }`}>
                                                                 {file.status}
                                                             </span>
                                                         )}
