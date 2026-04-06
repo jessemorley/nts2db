@@ -63,7 +63,7 @@ def fetch_liked_tracks():
         url = f"{base_url}?client_id={SC_CLIENT_ID}&limit=10"
     
     # Redacted URL for logging
-    log_url = url.replace(SC_CLIENT_ID, "REDACTED") if SC_CLIENT_ID else url
+    log_url = url.replace(SC_CLIENT_ID, "REDACTED") if SC_CLIENT_ID and SC_CLIENT_ID in url else url
     print(f"🔍 Fetching likes from: {log_url}")
 
     headers = {
@@ -82,7 +82,7 @@ def fetch_liked_tracks():
     try:
         resp = requests.get(url, headers=headers)
         print(f"🔍 SoundCloud Response Status: {resp.status_code}")
-...
+        
         if resp.status_code == 401:
             log_to_supabase("Auth Error", "SoundCloud API", "error")
             print("❌ SoundCloud Unauthorized (401). Check SC_OAUTH_TOKEN.")
