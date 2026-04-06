@@ -54,22 +54,18 @@ def get_dbx_client():
 
 def fetch_liked_tracks():
     """Fetch the 10 most recent likes from SoundCloud."""
-    # Use /me/ if we have an OAuth token, otherwise fallback to specific user ID
-    if SC_OAUTH_TOKEN:
-        base_url = "https://api-v2.soundcloud.com/me/likes"
-        url = f"{base_url}?limit=10"
-    else:
-        base_url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes"
-        url = f"{base_url}?client_id={SC_CLIENT_ID}&limit=10"
+    # Reverting to user-specific ID as /me/ returned 404
+    url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id={SC_CLIENT_ID}&limit=10"
     
     # Redacted URL for logging
-    log_url = url.replace(SC_CLIENT_ID, "REDACTED") if SC_CLIENT_ID and SC_CLIENT_ID in url else url
+    log_url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id=REDACTED&limit=10"
     print(f"🔍 Fetching likes from: {log_url}")
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         "Accept": "application/json",
-        "Referer": "https://soundcloud.com/"
+        "Referer": "https://soundcloud.com/",
+        "Origin": "https://soundcloud.com"
     }
 
     if SC_OAUTH_TOKEN:
@@ -77,7 +73,7 @@ def fetch_liked_tracks():
         if not token.lower().startswith("oauth "):
             token = f"OAuth {token}"
         headers["Authorization"] = token
-        print("🔍 Using OAuth token (switching to /me/likes).")
+        print("🔍 Using OAuth token + Client ID.")
 
     try:
         resp = requests.get(url, headers=headers)
@@ -94,8 +90,7 @@ def fetch_liked_tracks():
         print(f"🔍 Found {len(collection)} tracks in collection.")
         
         if len(collection) == 0:
-            # Log a snippet of the raw response if empty
-            print(f"🔍 Raw response snippet: {resp.text[:200]}")
+            print(f"🔍 Raw response: {resp.text}")
             
         return collection
     except Exception as e:
