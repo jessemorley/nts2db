@@ -30,6 +30,7 @@ jobs:
         env:
           SC_CLIENT_ID: ${{ secrets.SC_CLIENT_ID }}
           SC_USER_ID: ${{ secrets.SC_USER_ID }}
+          SC_OAUTH_TOKEN: ${{ secrets.SC_OAUTH_TOKEN }}
           DBX_APP_KEY: ${{ secrets.DBX_APP_KEY }}
           DBX_APP_SECRET: ${{ secrets.DBX_APP_SECRET }}
           DBX_REFRESH_TOKEN: ${{ secrets.DBX_REFRESH_TOKEN }}
