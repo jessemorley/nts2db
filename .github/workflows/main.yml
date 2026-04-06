@@ -1,0 +1,29 @@
+name: Hourly Music Sync
+on:
+  schedule:
+    - cron: '0 * * * *' # Runs every hour
+  workflow_dispatch: # This adds a "Run now" button in GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: |
+          pip install requests dropbox yt-dlp
+          
+      - name: Run Sync
+        env:
+          SC_CLIENT_ID: ${{ secrets.SC_CLIENT_ID }}
+          SC_USER_ID: ${{ secrets.SC_USER_ID }}
+          DBX_APP_KEY: ${{ secrets.DBX_APP_KEY }}
+          DBX_APP_SECRET: ${{ secrets.DBX_APP_SECRET }}
+          DBX_REFRESH_TOKEN: ${{ secrets.DBX_REFRESH_TOKEN }}
+        run: python sync.py

@@ -1,0 +1,15 @@
+Local Python artifacts
+
+pycache/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+Temporary sync files
+
+temp_track.mp3
+
+VS Code settings
+
+.vscode/
