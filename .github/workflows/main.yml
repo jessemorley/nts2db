@@ -1,37 +1,32 @@
 name: Hourly Music Sync
 on:
-  push:
-    branches:
-      - main
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
-
-env:
-  # Opt into Node.js 24 for actions as per deprecation notice
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    - cron: '0 * * * *' # Runs every hour
+  workflow_dispatch: # This adds a "Run now" button in GitHub
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
       
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.9'
           
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install requests dropbox yt-dlp
           
       - name: Run Sync
         env:
           SC_CLIENT_ID: ${{ secrets.SC_CLIENT_ID }}
           SC_USER_ID: ${{ secrets.SC_USER_ID }}
-          SC_OAUTH_TOKEN: ${{ secrets.SC_OAUTH_TOKEN }}
+          SC_OAUTH_TOKEN: ${{ secrets.SC_OAUTH_TOKEN }} # Added to solve 401 error
           DBX_APP_KEY: ${{ secrets.DBX_APP_KEY }}
           DBX_APP_SECRET: ${{ secrets.DBX_APP_SECRET }}
           DBX_REFRESH_TOKEN: ${{ secrets.DBX_REFRESH_TOKEN }}
-        run: python sync.py
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python cloud_sync.py

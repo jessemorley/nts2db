@@ -8,6 +8,7 @@ from datetime import datetime
 # SoundCloud & Dropbox Configuration
 SC_CLIENT_ID = os.getenv("SC_CLIENT_ID")
 SC_USER_ID = os.getenv("SC_USER_ID")
+SC_OAUTH_TOKEN = os.getenv("SC_OAUTH_TOKEN") # Added to handle authentication
 DBX_APP_KEY = os.getenv("DBX_APP_KEY")
 DBX_APP_SECRET = os.getenv("DBX_APP_SECRET")
 DBX_REFRESH_TOKEN = os.getenv("DBX_REFRESH_TOKEN")
@@ -56,9 +57,27 @@ def get_dbx_client():
 
 def fetch_liked_tracks():
     """Fetch the 10 most recent likes from SoundCloud."""
+    # Use the modern /likes endpoint
     url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id={SC_CLIENT_ID}&limit=10"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": "https://soundcloud.com/"
+    }
+
+    # If an OAuth token is provided, format it correctly and add it to headers
+    if SC_OAUTH_TOKEN:
+        token = SC_OAUTH_TOKEN.strip()
+        if not token.lower().startswith("oauth "):
+            token = f"OAuth {token}"
+        headers["Authorization"] = token
+
     try:
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = requests.get(url, headers=headers)
+        if resp.status_code == 401:
+            print("❌ SoundCloud Unauthorized (401). Check your SC_OAUTH_TOKEN in GitHub Secrets.")
+            return []
         resp.raise_for_status()
         return resp.json().get('collection', [])
     except Exception as e:
