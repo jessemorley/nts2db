@@ -96,8 +96,10 @@ def sync_to_dropbox():
         return
 
     # --- Phase 1: Discover & Queue ---
-    # Use title/uploader from the flat extract directly — no per-track metadata fetch needed.
-    # Check Dropbox existence and create a 'queued' Supabase record for each new track.
+    # SoundCloud flat extract omits title/uploader, so a full per-track metadata fetch is
+    # required to build the correct filename for the Dropbox existence check.
+    # New tracks get a 'queued' Supabase record immediately so the dashboard shows the
+    # full queue before any downloads begin.
     print(f"📋 Scanning {len(items)} tracks against Dropbox...")
     tracks_to_download = []
     for item in items:
@@ -105,8 +107,15 @@ def sync_to_dropbox():
         if not url: continue
         if url.startswith('/'): url = f"https://soundcloud.com{url}"
 
-        title = item.get('title', 'Unknown Title')
-        artist = item.get('uploader', 'Unknown Artist')
+        try:
+            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True, 'no_cache_dir': True}) as ydl:
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'Unknown Title')
+                artist = info.get('uploader', 'Unknown Artist')
+        except:
+            title = item.get('title', 'Unknown Title')
+            artist = item.get('uploader', 'Unknown Artist')
+
         clean_name = "".join([c for c in f"{title} - {artist}" if c.isalnum() or c in (' ', '-', '_')]).strip()
         dbx_path = f"/Music/Sync/{clean_name}.mp3"
 
