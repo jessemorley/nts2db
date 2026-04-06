@@ -75,13 +75,15 @@
 
                 init();
 
-                // Polling fallback — realtime subscription may miss events if not yet ready
+                // Polling fallback — realtime subscription may miss events if not yet ready,
+                // and also retries the initial inventory fetch if it failed on load.
                 const poll = setInterval(async () => {
-                    const { data } = await supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(10);
-                    if (data) {
-                        setSyncHistory(data);
-                        setIsWaitingForWorker(false);
-                    }
+                    const [{ data: logs }, { data: files }] = await Promise.all([
+                        supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(10),
+                        supabaseClient.from('dropbox_inventory').select('*').order('name', { ascending: true }),
+                    ]);
+                    if (logs) { setSyncHistory(logs); setIsWaitingForWorker(false); }
+                    if (files) setInventory(files);
                 }, 5000);
 
                 return () => {
