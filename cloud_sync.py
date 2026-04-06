@@ -54,10 +54,16 @@ def get_dbx_client():
 
 def fetch_liked_tracks():
     """Fetch the 10 most recent likes from SoundCloud."""
-    url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id={SC_CLIENT_ID}&limit=10"
+    # Use /me/ if we have an OAuth token, otherwise fallback to specific user ID
+    if SC_OAUTH_TOKEN:
+        base_url = "https://api-v2.soundcloud.com/me/likes"
+        url = f"{base_url}?limit=10"
+    else:
+        base_url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes"
+        url = f"{base_url}?client_id={SC_CLIENT_ID}&limit=10"
     
     # Redacted URL for logging
-    log_url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id=REDACTED&limit=10"
+    log_url = url.replace(SC_CLIENT_ID, "REDACTED") if SC_CLIENT_ID else url
     print(f"🔍 Fetching likes from: {log_url}")
 
     headers = {
@@ -71,12 +77,12 @@ def fetch_liked_tracks():
         if not token.lower().startswith("oauth "):
             token = f"OAuth {token}"
         headers["Authorization"] = token
-        print("🔍 Using OAuth token.")
+        print("🔍 Using OAuth token (switching to /me/likes).")
 
     try:
         resp = requests.get(url, headers=headers)
         print(f"🔍 SoundCloud Response Status: {resp.status_code}")
-        
+...
         if resp.status_code == 401:
             log_to_supabase("Auth Error", "SoundCloud API", "error")
             print("❌ SoundCloud Unauthorized (401). Check SC_OAUTH_TOKEN.")

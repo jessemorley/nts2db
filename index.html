@@ -28,6 +28,7 @@
             const [syncHistory, setSyncHistory] = useState([]);
             const [loading, setLoading] = useState(true);
             const [syncing, setSyncing] = useState(false);
+            const [isWaitingForWorker, setIsWaitingForWorker] = useState(false);
 
             const handleRetrigger = async () => {
                 let pat = localStorage.getItem('GITHUB_PAT');
@@ -50,7 +51,7 @@
                     });
 
                     if (response.ok) {
-                        alert("🚀 Sync triggered! Check back in 1-2 mins.");
+                        setIsWaitingForWorker(true);
                     } else {
                         const err = await response.json().catch(() => ({ message: "Unknown error" }));
                         alert(`❌ Failed: ${err.message}`);
@@ -84,6 +85,7 @@
                             { event: 'INSERT', table: 'sync_history', schema: 'public' }, 
                             (payload) => {
                                 setSyncHistory(prev => [payload.new, ...prev].slice(0, 10));
+                                setIsWaitingForWorker(false);
                             }
                         )
                         .subscribe();
@@ -95,7 +97,7 @@
 
             useEffect(() => {
                 lucide.createIcons();
-            }, [loading, syncHistory, syncing]);
+            }, [loading, syncHistory, syncing, isWaitingForWorker]);
 
             if (SUPABASE_PUBLISHABLE_KEY === "PASTE_YOUR_SB_PUBLISHABLE_KEY_HERE") {
                 return (
@@ -145,7 +147,20 @@
                                 </h2>
                             </div>
                             <div className="space-y-3">
-                                {syncHistory.length === 0 ? (
+                                {isWaitingForWorker && (
+                                    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-5 flex items-center justify-between animate-pulse">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-500">
+                                                <i data-lucide="loader-2" className="animate-spin"></i>
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-sm tracking-tight text-emerald-400 italic">Sync in progress...</p>
+                                                <p className="text-[10px] opacity-40 uppercase font-black tracking-tight">Worker is fetching tracks from SoundCloud</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {syncHistory.length === 0 && !isWaitingForWorker ? (
                                     <div className="border border-dashed border-white/10 rounded-2xl p-16 text-center opacity-30 italic">
                                         Waiting for logs from worker...
                                     </div>
