@@ -8,25 +8,49 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
+<body class="bg-zinc-50 text-zinc-950 font-sans antialiased">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
+
+        const Svg = ({ className = "h-4 w-4", children }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className={className}>
+                {children}
+            </svg>
+        );
+        const ICloud      = ({c}) => <Svg className={c}><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></Svg>;
+        const IActivity   = ({c}) => <Svg className={c}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></Svg>;
+        const ILoader     = ({c}) => <Svg className={c}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></Svg>;
+        const IPlay       = ({c}) => <Svg className={c}><polygon points="5 3 19 12 5 21 5 3"/></Svg>;
+        const ISearch     = ({c}) => <Svg className={c}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></Svg>;
+        const IFileAudio  = ({c}) => <Svg className={c}><path d="M17.5 22h.5a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3"/><polyline points="14 2 14 8 20 8"/><path d="M2 17v-3a4 4 0 0 1 8 0v3"/><circle cx="9" cy="17" r="1"/><circle cx="3" cy="17" r="1"/></Svg>;
+        const IMusic      = ({c}) => <Svg className={c}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></Svg>;
+        const IChevronUp  = ({c}) => <Svg className={c}><polyline points="18 15 12 9 6 15"/></Svg>;
+        const IChevronDn  = ({c}) => <Svg className={c}><polyline points="6 9 12 15 18 9"/></Svg>;
 
         const SUPABASE_URL = "https://anrruvpfkyuiczciabpf.supabase.co";
         const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_CvovmnnKX4rX-U9rU4m7iA_2C-VqfR_";
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
+        const parseName = (name) => {
+            const clean = (name || '').replace(/\.mp3$/i, '');
+            const idx = clean.indexOf(' - ');
+            if (idx === -1) return { title: clean, artist: 'Unknown' };
+            return { title: clean.slice(0, idx), artist: clean.slice(idx + 3) };
+        };
+
         const App = () => {
             const [syncHistory, setSyncHistory] = useState([]);
             const [inventory, setInventory] = useState([]);
-            const [loading, setLoading] = useState(true);
             const [syncing, setSyncing] = useState(false);
             const [isWaitingForWorker, setIsWaitingForWorker] = useState(false);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [sortConfig, setSortConfig] = useState({ key: 'title', direction: 'asc' });
 
             const handleRetrigger = async () => {
                 let pat = localStorage.getItem('GITHUB_PAT');
@@ -39,7 +63,7 @@
                 try {
                     const response = await fetch('https://api.github.com/repos/jessemorley/nts2db/actions/workflows/main.yml/dispatches', {
                         method: 'POST',
-                        headers: {'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github+json'},
+                        headers: { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github+json' },
                         body: JSON.stringify({ ref: 'main' })
                     });
                     if (response.ok) setIsWaitingForWorker(true);
@@ -50,21 +74,17 @@
 
             useEffect(() => {
                 let channel;
-
                 const init = async () => {
-                    const { data: logs } = await supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(10);
+                    const { data: logs } = await supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(20);
                     if (logs) setSyncHistory(logs);
-
                     const { data: files } = await supabaseClient.from('dropbox_inventory').select('*').order('name', { ascending: true });
                     if (files) setInventory(files);
-
-                    setLoading(false);
 
                     channel = supabaseClient.channel('db-changes')
                         .on('postgres_changes', { event: '*', table: 'sync_history', schema: 'public' }, (p) => {
                             setIsWaitingForWorker(false);
-                            if (p.eventType === 'INSERT') { setSyncHistory(prev => [p.new, ...prev].slice(0, 10)); }
-                            else if (p.eventType === 'UPDATE') { setSyncHistory(prev => prev.map(i => i.id === p.new.id ? p.new : i)); }
+                            if (p.eventType === 'INSERT') setSyncHistory(prev => [p.new, ...prev].slice(0, 20));
+                            else if (p.eventType === 'UPDATE') setSyncHistory(prev => prev.map(i => i.id === p.new.id ? p.new : i));
                         })
                         .on('postgres_changes', { event: '*', table: 'dropbox_inventory', schema: 'public' }, async () => {
                             const { data } = await supabaseClient.from('dropbox_inventory').select('*').order('name', { ascending: true });
@@ -75,11 +95,9 @@
 
                 init();
 
-                // Polling fallback — realtime subscription may miss events if not yet ready,
-                // and also retries the initial inventory fetch if it failed on load.
                 const poll = setInterval(async () => {
                     const [{ data: logs }, { data: files }] = await Promise.all([
-                        supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(10),
+                        supabaseClient.from('sync_history').select('*').order('created_at', { ascending: false }).limit(20),
                         supabaseClient.from('dropbox_inventory').select('*').order('name', { ascending: true }),
                     ]);
                     if (logs) { setSyncHistory(logs); setIsWaitingForWorker(false); }
@@ -92,99 +110,222 @@
                 };
             }, []);
 
-            useEffect(() => { lucide.createIcons(); }, [loading, syncHistory, inventory, isWaitingForWorker]);
+            // Derive active rows and worker status from sync_history
+            const activeRows = syncHistory.filter(r => r.status === 'downloading' || r.status === 'uploading');
+            const isSyncing = isWaitingForWorker || activeRows.length > 0;
 
-            const getStatusColor = (status) => {
-                switch(status) {
-                    case 'success': return 'text-emerald-500 border-emerald-500/20 bg-emerald-500/5';
-                    case 'exists': return 'text-amber-400 border-amber-400/20 bg-amber-400/5';
-                    case 'downloading': return 'text-blue-400 border-blue-400/20 bg-blue-400/5';
-                    case 'uploading': return 'text-purple-400 border-purple-400/20 bg-purple-400/5';
-                    case 'error': return 'text-red-500 border-red-500/20 bg-red-500/5';
-                    default: return 'text-white/40 border-white/10 bg-white/5';
-                }
+            let workerStatus = 'Idle';
+            if (isWaitingForWorker) {
+                workerStatus = 'Worker starting...';
+            } else if (activeRows.length > 0) {
+                const r = activeRows[0];
+                const pct = r.progress != null ? ` (${r.progress}%)` : '';
+                workerStatus = `${r.status.charAt(0).toUpperCase() + r.status.slice(1)}: ${r.title}${pct}`;
+            } else if (syncHistory.length > 0) {
+                const last = syncHistory[0];
+                workerStatus = `Last sync: ${last.title} — ${last.status}`;
+            }
+
+            // Merge inventory with any currently active sync rows
+            const mergedLibrary = useMemo(() => {
+                const active = syncHistory.filter(r => r.status === 'downloading' || r.status === 'uploading');
+                const inventoryItems = inventory.map(f => ({
+                    id: f.id,
+                    name: (f.name || '').replace(/\.mp3$/i, ''),
+                    ...parseName(f.name),
+                    status: 'synced',
+                    progress: null,
+                }));
+                const inventoryNames = new Set(inventoryItems.map(i => i.name.toLowerCase()));
+                const activeItems = active
+                    .filter(r => !inventoryNames.has(`${r.title} - ${r.artist}`.toLowerCase()))
+                    .map(r => ({
+                        id: `active-${r.id}`,
+                        name: `${r.title} - ${r.artist}`,
+                        title: r.title,
+                        artist: r.artist,
+                        status: r.status,
+                        progress: r.progress,
+                    }));
+                return [...activeItems, ...inventoryItems];
+            }, [inventory, syncHistory]);
+
+            const sortedLibrary = useMemo(() => {
+                let items = mergedLibrary.filter(item => {
+                    const s = `${item.title} ${item.artist}`.toLowerCase();
+                    return s.includes(searchTerm.toLowerCase());
+                });
+                items.sort((a, b) => {
+                    // Active items pin to top
+                    if (a.status !== 'synced' && b.status === 'synced') return -1;
+                    if (a.status === 'synced' && b.status !== 'synced') return 1;
+                    const aVal = (a[sortConfig.key] || '').toLowerCase();
+                    const bVal = (b[sortConfig.key] || '').toLowerCase();
+                    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                    return 0;
+                });
+                return items;
+            }, [mergedLibrary, searchTerm, sortConfig]);
+
+            const requestSort = (key) => {
+                setSortConfig(prev => ({
+                    key,
+                    direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+                }));
+            };
+
+            const SortIcon = ({ col }) => {
+                if (sortConfig.key !== col) return null;
+                return sortConfig.direction === 'asc'
+                    ? <IChevronUp c="inline-block w-3 h-3 ml-1 align-middle" />
+                    : <IChevronDn c="inline-block w-3 h-3 ml-1 align-middle" />;
             };
 
             return (
-                <div className="min-h-screen max-w-6xl mx-auto p-6 space-y-8">
-                    <header className="flex justify-between items-center border-b border-white/10 pb-6">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-emerald-500 p-2 rounded-xl text-black shadow-[0_0_20px_rgba(16,185,129,0.4)]">
-                                <i data-lucide="music"></i>
+                <div className="min-h-screen bg-zinc-50 text-zinc-950 p-4 md:p-8 font-sans antialiased">
+                    <div className="max-w-2xl mx-auto space-y-8">
+
+                        {/* Header */}
+                        <header className="flex items-center gap-3 border-b border-zinc-200 pb-6">
+                            <div className="bg-zinc-900 text-zinc-50 p-2 rounded-md shadow-sm shrink-0">
+                                <ICloud c="h-5 w-5" />
                             </div>
                             <div>
-                                <h1 className="text-2xl font-black italic tracking-tighter leading-none">SOUNDDROP</h1>
-                                <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest mt-1">Live Sync Dashboard</p>
+                                <h1 className="text-xl font-semibold tracking-tight">SoundDrop</h1>
+                                <p className="text-xs text-zinc-500 font-medium">Cloud Automation Worker</p>
                             </div>
-                        </div>
-                        <button onClick={handleRetrigger} disabled={syncing} className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-white bg-white/5 px-4 py-2 rounded-xl border border-white/10 hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50">
-                            <i data-lucide="refresh-cw" className={syncing ? 'animate-spin' : ''}></i>
-                            {syncing ? 'Triggering...' : 'Sync Now'}
-                        </button>
-                    </header>
+                        </header>
 
-                    <section className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-                        <div className="lg:col-span-2 space-y-4">
-                            <h2 className="text-[10px] font-bold opacity-40 uppercase tracking-widest flex items-center gap-2">
-                                <i data-lucide="list" className="w-3 h-3"></i> Recent Activity
-                            </h2>
-                            <div className="space-y-3">
-                                {isWaitingForWorker && (
-                                    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-5 flex items-center gap-4 animate-pulse">
-                                        <div className="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-500"><i data-lucide="zap"></i></div>
-                                        <div><p className="font-bold text-sm text-emerald-400">Worker Starting...</p></div>
+                        {/* System Status Card */}
+                        <div className="rounded-lg border border-zinc-200 bg-white shadow-sm p-6 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <IActivity c={`h-4 w-4 ${isSyncing ? 'text-zinc-900' : 'text-zinc-400'}`} />
+                                    <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">System Status</h2>
+                                </div>
+                                {isSyncing && (
+                                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-full border border-zinc-200">
+                                        <ILoader c="h-3 w-3 animate-spin" />
+                                        Live Sync
                                     </div>
                                 )}
-                                {syncHistory.map(item => (
-                                    <div key={item.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4 group hover:border-white/20 transition-all">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-4 text-left">
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.status === 'success' ? 'text-emerald-500 bg-emerald-500/10' : 'text-white/20 bg-white/10'}`}>
-                                                    <i data-lucide={item.status === 'exists' ? 'check-circle' : 'disc'} className="w-5 h-5"></i>
-                                                </div>
-                                                <div>
-                                                    <p className="font-bold text-sm truncate max-w-[200px] md:max-w-md">{item.title}</p>
-                                                    <p className="text-[10px] opacity-40 uppercase font-black">{item.artist} • {new Date(item.created_at).toLocaleTimeString()}</p>
-                                                </div>
-                                            </div>
-                                            <div className={`text-[8px] font-black border px-2 py-1 rounded-md tracking-widest uppercase ${getStatusColor(item.status)}`}>
-                                                {item.status === 'exists' ? 'Skipped' : item.status}
-                                            </div>
-                                        </div>
-                                        {(item.status === 'downloading' || item.status === 'uploading') && (
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between text-[8px] font-black uppercase opacity-40">
-                                                    <span>{item.status}</span>
-                                                    <span>{item.progress || 0}%</span>
-                                                </div>
-                                                <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${item.progress || 0}%` }}></div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
+                            </div>
+                            <div className="flex flex-col sm:flex-row items-stretch gap-3">
+                                <div className="flex-1 bg-zinc-50 rounded-md p-3 border border-zinc-200 flex items-center min-w-0">
+                                    <span className="text-sm font-medium text-zinc-700 truncate">{workerStatus}</span>
+                                </div>
+                                <button
+                                    onClick={handleRetrigger}
+                                    disabled={syncing}
+                                    className={`sm:w-auto inline-flex items-center justify-center gap-2 rounded-md px-4 h-10 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950 disabled:pointer-events-none disabled:opacity-50
+                                        ${syncing
+                                            ? 'bg-zinc-100 text-zinc-400 border border-zinc-200'
+                                            : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 shadow-sm'
+                                        }`}
+                                >
+                                    {syncing ? <ILoader c="h-4 w-4 animate-spin" /> : <IPlay c="h-4 w-4" />}
+                                    {syncing ? 'Triggering...' : 'Sync Now'}
+                                </button>
                             </div>
                         </div>
 
+                        {/* Library Section */}
                         <div className="space-y-4">
-                            <h2 className="text-[10px] font-bold opacity-40 uppercase tracking-widest flex items-center gap-2">
-                                <i data-lucide="folder" className="w-3 h-3"></i> Dropbox Library ({inventory.length})
-                            </h2>
-                            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-                                <div className="max-h-[600px] overflow-y-auto p-2 space-y-1 scrollbar-hide">
-                                    {inventory.length === 0 ? (
-                                        <div className="p-8 text-center opacity-20 text-xs italic">Library empty</div>
-                                    ) : inventory.map((file, idx) => (
-                                        <div key={idx} className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-all group">
-                                            <i data-lucide="file-audio" className="w-3 h-3 text-emerald-500/40 group-hover:text-emerald-500"></i>
-                                            <p className="text-[11px] font-medium truncate opacity-60 group-hover:opacity-100">{file.name.replace(/\.mp3$/i, '')}</p>
-                                        </div>
-                                    ))}
+                            <div className="space-y-3">
+                                <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 px-1">
+                                    Music Library ({mergedLibrary.length})
+                                </h2>
+                                <div className="relative w-full">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none flex"><ISearch c="h-4 w-4" /></span>
+                                    <input
+                                        type="text"
+                                        placeholder="Search library..."
+                                        className="flex h-11 w-full rounded-md border border-zinc-200 bg-white pl-10 pr-4 py-2 text-sm shadow-sm placeholder:text-zinc-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="rounded-md border border-zinc-200 bg-white overflow-hidden shadow-sm">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-zinc-50 border-b border-zinc-200">
+                                            <tr className="h-10">
+                                                <th
+                                                    className="w-1/2 px-4 text-left align-middle cursor-pointer select-none hover:text-zinc-900 transition-colors"
+                                                    onClick={() => requestSort('title')}
+                                                >
+                                                    <div className="flex items-center text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                                                        Track <SortIcon col="title" />
+                                                    </div>
+                                                </th>
+                                                <th
+                                                    className="w-1/3 px-4 text-left align-middle cursor-pointer select-none hover:text-zinc-900 transition-colors"
+                                                    onClick={() => requestSort('artist')}
+                                                >
+                                                    <div className="flex items-center text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                                                        Artist <SortIcon col="artist" />
+                                                    </div>
+                                                </th>
+                                                <th className="w-1/6 px-4 text-right align-middle">
+                                                    <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Status</div>
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-100">
+                                            {sortedLibrary.map((file) => (
+                                                <tr key={file.id} className="h-14 hover:bg-zinc-50 transition-colors">
+                                                    <td className="px-4 align-middle">
+                                                        <div className="flex flex-col gap-1.5 min-w-0">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`shrink-0 p-1.5 rounded-sm border transition-all ${file.status === 'synced' ? 'bg-zinc-50 border-zinc-100 text-zinc-400' : 'bg-zinc-900 border-zinc-900 text-zinc-50'}`}>
+                                                                    <IFileAudio c="h-3.5 w-3.5" />
+                                                                </div>
+                                                                <span className="font-medium text-sm truncate text-zinc-900">{file.title}</span>
+                                                            </div>
+                                                            {file.status !== 'synced' && (
+                                                                <div className="pl-10 pr-2">
+                                                                    <div className="h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
+                                                                        <div
+                                                                            className="h-full bg-zinc-900 transition-all duration-300 ease-in-out"
+                                                                            style={{ width: `${file.progress || 0}%` }}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 align-middle">
+                                                        <span className="text-xs text-zinc-500 font-medium truncate block">{file.artist}</span>
+                                                    </td>
+                                                    <td className="px-4 align-middle text-right">
+                                                        {file.status !== 'synced' && (
+                                                            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-zinc-600 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                                {file.status}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {sortedLibrary.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="3" className="h-48 text-center">
+                                                        <div className="flex flex-col items-center justify-center gap-2">
+                                                            <IMusic c="h-8 w-8 text-zinc-200" />
+                                                            <p className="text-xs font-medium text-zinc-400">No results found in library</p>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </div>
-                    </section>
+
+                    </div>
                 </div>
             );
         };
