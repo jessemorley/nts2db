@@ -68,7 +68,10 @@ const App = () => {
                 let channel;
                 const fetchTracks = async () => {
                     const { data } = await supabaseClient.from('playlist_tracks').select('*').order('updated_at', { ascending: false });
-                    if (data) { setTracks(data); setIsWaitingForWorker(false); }
+                    if (data) {
+                        setTracks(data);
+                        if (data.length > 0) setIsWaitingForWorker(false);
+                    }
                 };
 
                 const init = async () => {
