@@ -8,7 +8,7 @@ from datetime import datetime
 # SoundCloud & Dropbox Configuration
 SC_CLIENT_ID = os.getenv("SC_CLIENT_ID")
 SC_USER_ID = os.getenv("SC_USER_ID")
-SC_OAUTH_TOKEN = os.getenv("SC_OAUTH_TOKEN") # Added to handle authentication
+SC_OAUTH_TOKEN = os.getenv("SC_OAUTH_TOKEN")
 DBX_APP_KEY = os.getenv("DBX_APP_KEY")
 DBX_APP_SECRET = os.getenv("DBX_APP_SECRET")
 DBX_REFRESH_TOKEN = os.getenv("DBX_REFRESH_TOKEN")
@@ -17,15 +17,14 @@ DBX_REFRESH_TOKEN = os.getenv("DBX_REFRESH_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY") 
 
-def log_to_supabase(title, artist):
-    """Logs the sync event to Supabase using the new Opaque Key approach."""
+def log_to_supabase(title, artist, status="success"):
+    """Logs the sync event or status to Supabase."""
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         print("Supabase configuration missing (SUPABASE_URL or SUPABASE_SECRET_KEY).")
         return
 
     url = f"{SUPABASE_URL}/rest/v1/sync_history"
     
-    # Header pattern for new Opaque Keys (sb_secret_...)
     headers = {
         "apikey": SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
@@ -36,15 +35,13 @@ def log_to_supabase(title, artist):
     payload = {
         "title": title,
         "artist": artist,
-        "status": "success"
+        "status": status
     }
     
     try:
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code >= 400:
             print(f"Supabase logging failed: {response.status_code} - {response.text}")
-        else:
-            print(f"Dashboard updated for: {title}")
     except Exception as e:
         print(f"Exception during Supabase log: {e}")
 
@@ -57,7 +54,6 @@ def get_dbx_client():
 
 def fetch_liked_tracks():
     """Fetch the 10 most recent likes from SoundCloud."""
-    # Use the modern /likes endpoint
     url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id={SC_CLIENT_ID}&limit=10"
     
     headers = {
@@ -66,7 +62,6 @@ def fetch_liked_tracks():
         "Referer": "https://soundcloud.com/"
     }
 
-    # If an OAuth token is provided, format it correctly and add it to headers
     if SC_OAUTH_TOKEN:
         token = SC_OAUTH_TOKEN.strip()
         if not token.lower().startswith("oauth "):
@@ -76,22 +71,28 @@ def fetch_liked_tracks():
     try:
         resp = requests.get(url, headers=headers)
         if resp.status_code == 401:
-            print("❌ SoundCloud Unauthorized (401). Check your SC_OAUTH_TOKEN in GitHub Secrets.")
-            return []
+            log_to_supabase("Auth Error", "SoundCloud API", "error")
+            print("❌ SoundCloud Unauthorized (401). Check SC_OAUTH_TOKEN.")
+            return None
         resp.raise_for_status()
         return resp.json().get('collection', [])
     except Exception as e:
         print(f"SoundCloud fetch error: {e}")
-        return []
+        return None
 
 def sync_to_dropbox():
     dbx = get_dbx_client()
     items = fetch_liked_tracks()
     
+    if items is None:
+        return # Error already logged
+
     if not items:
-        print("No tracks found to sync.")
+        print("No tracks found. Logging heartbeat...")
+        log_to_supabase("System Check", "No new likes found", "idle")
         return
 
+    synced_any = False
     for item in items:
         track = item.get('track', {})
         if not track: continue
@@ -100,18 +101,14 @@ def sync_to_dropbox():
         artist = track.get('user', {}).get('username', 'Unknown Artist')
         url = track.get('permalink_url')
         
-        # Clean title for filename
         clean_title = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_')]).strip()
         dbx_path = f"/Music/Sync/{clean_title}.mp3"
         
         try:
-            # 1. Check if file exists in Dropbox
             dbx.files_get_metadata(dbx_path)
-            print(f"Skipping {title} - already in Dropbox.")
+            print(f"Skipping {title} - exists.")
         except:
             print(f"📥 Downloading: {title}...")
-            
-            # 2. Download from SoundCloud using yt-dlp
             ydl_opts = {
                 'outtmpl': 'temp_track.mp3',
                 'format': 'bestaudio/best',
@@ -123,13 +120,12 @@ def sync_to_dropbox():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
                 
-                # 3. Upload to Dropbox
                 print(f"📤 Uploading: {title}...")
                 with open("temp_track.mp3", "rb") as f:
                     dbx.files_upload(f.read(), dbx_path, mode=dropbox.files.WriteMode.overwrite)
                 
-                # 4. Log to Supabase for the Dashboard
-                log_to_supabase(title, artist)
+                log_to_supabase(title, artist, "success")
+                synced_any = True
                 print(f"✅ Success: {title}")
                 
             except Exception as e:
@@ -137,9 +133,12 @@ def sync_to_dropbox():
             finally:
                 if os.path.exists("temp_track.mp3"):
                     os.remove("temp_track.mp3")
+    
+    if not synced_any:
+        log_to_supabase("Sync Complete", "All tracks already in Dropbox", "idle")
 
 if __name__ == "__main__":
     if not all([SC_CLIENT_ID, SC_USER_ID, DBX_REFRESH_TOKEN]):
-        print("Missing critical environment variables (SoundCloud or Dropbox).")
+        print("Missing critical environment variables.")
     else:
         sync_to_dropbox()
