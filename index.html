@@ -60,7 +60,8 @@
 
                     const channel = supabaseClient.channel('db-changes')
                         .on('postgres_changes', { event: '*', table: 'sync_history', schema: 'public' }, (p) => {
-                            if (p.eventType === 'INSERT') { setSyncHistory(prev => [p.new, ...prev].slice(0, 10)); setIsWaitingForWorker(false); }
+                            setIsWaitingForWorker(false); // Clear starting state on ANY event
+                            if (p.eventType === 'INSERT') { setSyncHistory(prev => [p.new, ...prev].slice(0, 10)); }
                             else if (p.eventType === 'UPDATE') { setSyncHistory(prev => prev.map(i => i.id === p.new.id ? p.new : i)); }
                         })
                         .on('postgres_changes', { event: '*', table: 'dropbox_inventory', schema: 'public' }, async () => {
