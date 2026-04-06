@@ -13,6 +13,9 @@ SC_OAUTH_TOKEN = os.getenv("SC_OAUTH_TOKEN")
 # --- HARDCODE YOUR PLAYLIST URL HERE ---
 SC_PLAYLIST_URL = os.getenv("SC_PLAYLIST_URL") or "https://soundcloud.com/standarmorley/sets/apple-watch"
 # ---------------------------------------
+# NOTE: Ensure your Supabase table has a 'progress' column:
+# ALTER TABLE sync_history ADD COLUMN progress INT DEFAULT 0;
+# ---------------------------------------
 DBX_APP_KEY = os.getenv("DBX_APP_KEY")
 DBX_APP_SECRET = os.getenv("DBX_APP_SECRET")
 DBX_REFRESH_TOKEN = os.getenv("DBX_REFRESH_TOKEN")
@@ -111,14 +114,15 @@ def sync_to_dropbox():
         if url.startswith('/'): url = f"https://soundcloud.com{url}"
 
         # Fetch metadata for clean naming
+        title = item.get('title', 'Unknown Title')
+        artist = item.get('uploader', 'Unknown Artist')
         try:
             with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
                 info = ydl.extract_info(url, download=False)
-                title = info.get('title', 'Unknown Title')
-                artist = info.get('uploader', 'Unknown Artist')
-        except:
-            title = item.get('title', 'Unknown Title')
-            artist = item.get('uploader', 'Unknown Artist')
+                title = info.get('title', title)
+                artist = info.get('uploader', artist)
+        except Exception as e:
+            print(f"⚠️ Could not fetch full metadata: {e}")
 
         print(f"📥 Downloading ({i+1}/{len(items)}): {title}...")
         log_to_supabase(title, artist, status="downloading", progress=0, record_id=rid)
