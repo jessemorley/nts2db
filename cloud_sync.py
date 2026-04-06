@@ -53,48 +53,27 @@ def get_dbx_client():
     )
 
 def fetch_liked_tracks():
-    """Fetch the 10 most recent likes from SoundCloud."""
-    # Reverting to user-specific ID as /me/ returned 404
-    url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id={SC_CLIENT_ID}&limit=10"
+    """Fetch the 10 most recent likes using yt-dlp for discovery."""
+    likes_url = f"https://soundcloud.com/users/{SC_USER_ID}/likes"
+    print(f"🔍 Discovering likes via yt-dlp: {likes_url}")
     
-    # Redacted URL for logging
-    log_url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id=REDACTED&limit=10"
-    print(f"🔍 Fetching likes from: {log_url}")
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-        "Referer": "https://soundcloud.com/",
-        "Origin": "https://soundcloud.com"
+    ydl_opts = {
+        'extract_flat': True,
+        'quiet': True,
+        'no_warnings': True,
+        'playlist_items': '1,10', # Get first 10
     }
 
-    if SC_OAUTH_TOKEN:
-        token = SC_OAUTH_TOKEN.strip()
-        if not token.lower().startswith("oauth "):
-            token = f"OAuth {token}"
-        headers["Authorization"] = token
-        print("🔍 Using OAuth token + Client ID.")
-
     try:
-        resp = requests.get(url, headers=headers)
-        print(f"🔍 SoundCloud Response Status: {resp.status_code}")
-        
-        if resp.status_code == 401:
-            log_to_supabase("Auth Error", "SoundCloud API", "error")
-            print("❌ SoundCloud Unauthorized (401). Check SC_OAUTH_TOKEN.")
-            return None
-        
-        resp.raise_for_status()
-        data = resp.json()
-        collection = data.get('collection', [])
-        print(f"🔍 Found {len(collection)} tracks in collection.")
-        
-        if len(collection) == 0:
-            print(f"🔍 Raw response: {resp.text}")
-            
-        return collection
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            result = ydl.extract_info(likes_url, download=False)
+            if 'entries' in result:
+                tracks = result['entries']
+                print(f"🔍 Found {len(tracks)} tracks via yt-dlp.")
+                return tracks
+            return []
     except Exception as e:
-        print(f"SoundCloud fetch error: {e}")
+        print(f"❌ yt-dlp discovery error: {e}")
         return None
 
 def sync_to_dropbox():
@@ -102,7 +81,7 @@ def sync_to_dropbox():
     items = fetch_liked_tracks()
     
     if items is None:
-        return # Error already logged
+        return 
 
     if not items:
         print("No tracks found. Logging heartbeat...")
@@ -110,13 +89,16 @@ def sync_to_dropbox():
         return
 
     synced_any = False
-    for item in items:
-        track = item.get('track', {})
-        if not track: continue
+    for track in items:
+        # yt-dlp returns slightly different keys than the raw API
+        title = track.get('title') or track.get('url', 'Unknown Title')
+        artist = track.get('uploader') or 'Unknown Artist'
+        url = track.get('url')
+        if not url: continue
         
-        title = track.get('title', 'Unknown Title')
-        artist = track.get('user', {}).get('username', 'Unknown Artist')
-        url = track.get('permalink_url')
+        # Ensure URL is absolute
+        if url.startswith('/'):
+            url = f"https://soundcloud.com{url}"
         
         clean_title = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_')]).strip()
         dbx_path = f"/Music/Sync/{clean_title}.mp3"
