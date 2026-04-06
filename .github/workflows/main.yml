@@ -13,17 +13,19 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10' # Updated from 3.9
           
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install requests dropbox yt-dlp
           
       - name: Run Sync
         env:
           SC_CLIENT_ID: ${{ secrets.SC_CLIENT_ID }}
           SC_USER_ID: ${{ secrets.SC_USER_ID }}
-          SC_OAUTH_TOKEN: ${{ secrets.SC_OAUTH_TOKEN }} # Added to solve 401 error
+          SC_OAUTH_TOKEN: ${{ secrets.SC_OAUTH_TOKEN }}
+          SC_PLAYLIST_URL: ${{ secrets.SC_PLAYLIST_URL }} # Added for playlist support
           DBX_APP_KEY: ${{ secrets.DBX_APP_KEY }}
           DBX_APP_SECRET: ${{ secrets.DBX_APP_SECRET }}
           DBX_REFRESH_TOKEN: ${{ secrets.DBX_REFRESH_TOKEN }}
