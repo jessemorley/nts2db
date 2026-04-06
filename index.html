@@ -10,7 +10,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="bg-zinc-50 text-zinc-950 font-sans antialiased">
+<body class="bg-zinc-950 text-zinc-50 font-sans antialiased">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -183,12 +183,12 @@
             };
 
             return (
-                <div className="min-h-screen bg-zinc-50 text-zinc-950 p-4 md:p-8 font-sans antialiased">
+                <div className="min-h-screen bg-zinc-950 text-zinc-50 p-4 md:p-8 font-sans antialiased">
                     <div className="max-w-2xl mx-auto space-y-8">
 
                         {/* Header */}
-                        <header className="flex items-center gap-3 border-b border-zinc-200 pb-6">
-                            <div className="bg-zinc-900 text-zinc-50 p-2 rounded-md shadow-sm shrink-0">
+                        <header className="flex items-center gap-3 border-b border-zinc-800 pb-6">
+                            <div className="bg-zinc-50 text-zinc-900 p-2 rounded-md shadow-sm shrink-0">
                                 <ICloud c="h-5 w-5" />
                             </div>
                             <div>
@@ -198,30 +198,30 @@
                         </header>
 
                         {/* System Status Card */}
-                        <div className="rounded-lg border border-zinc-200 bg-white shadow-sm p-6 space-y-4">
+                        <div className="rounded-lg border border-zinc-800 bg-zinc-900 shadow-sm p-6 space-y-4">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <IActivity c={`h-4 w-4 ${isSyncing ? 'text-zinc-900' : 'text-zinc-400'}`} />
+                                    <IActivity c={`h-4 w-4 ${isSyncing ? 'text-zinc-50' : 'text-zinc-600'}`} />
                                     <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">System Status</h2>
                                 </div>
                                 {isSyncing && (
-                                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-full border border-zinc-200">
+                                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded-full border border-zinc-700">
                                         <ILoader c="h-3 w-3 animate-spin" />
                                         Live Sync
                                     </div>
                                 )}
                             </div>
                             <div className="flex flex-col sm:flex-row items-stretch gap-3">
-                                <div className="flex-1 bg-zinc-50 rounded-md p-3 border border-zinc-200 flex items-center min-w-0">
-                                    <span className="text-sm font-medium text-zinc-700 truncate">{workerStatus}</span>
+                                <div className="flex-1 bg-zinc-800 rounded-md p-3 border border-zinc-700 flex items-center min-w-0">
+                                    <span className="text-sm font-medium text-zinc-300 truncate">{workerStatus}</span>
                                 </div>
                                 <button
                                     onClick={handleRetrigger}
                                     disabled={syncing}
-                                    className={`sm:w-auto inline-flex items-center justify-center gap-2 rounded-md px-4 h-10 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950 disabled:pointer-events-none disabled:opacity-50
+                                    className={`sm:w-auto inline-flex items-center justify-center gap-2 rounded-md px-4 h-10 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-50 disabled:pointer-events-none disabled:opacity-50
                                         ${syncing
-                                            ? 'bg-zinc-100 text-zinc-400 border border-zinc-200'
-                                            : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 shadow-sm'
+                                            ? 'bg-zinc-800 text-zinc-600 border border-zinc-700'
+                                            : 'bg-zinc-50 text-zinc-900 hover:bg-zinc-200 shadow-sm'
                                         }`}
                                 >
                                     {syncing ? <ILoader c="h-4 w-4 animate-spin" /> : <IPlay c="h-4 w-4" />}
@@ -237,24 +237,24 @@
                                     Music Library ({mergedLibrary.length})
                                 </h2>
                                 <div className="relative w-full">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none flex"><ISearch c="h-4 w-4" /></span>
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none flex"><ISearch c="h-4 w-4" /></span>
                                     <input
                                         type="text"
                                         placeholder="Search library..."
-                                        className="flex h-11 w-full rounded-md border border-zinc-200 bg-white pl-10 pr-4 py-2 text-sm shadow-sm placeholder:text-zinc-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950"
+                                        className="flex h-11 w-full rounded-md border border-zinc-700 bg-zinc-800 text-zinc-50 pl-10 pr-4 py-2 text-sm placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-50"
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                     />
                                 </div>
                             </div>
 
-                            <div className="rounded-md border border-zinc-200 bg-white overflow-hidden shadow-sm">
+                            <div className="rounded-md border border-zinc-800 bg-zinc-900 overflow-hidden shadow-sm">
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm">
-                                        <thead className="bg-zinc-50 border-b border-zinc-200">
+                                        <thead className="bg-zinc-800/50 border-b border-zinc-800">
                                             <tr className="h-10">
                                                 <th
-                                                    className="w-1/2 px-4 text-left align-middle cursor-pointer select-none hover:text-zinc-900 transition-colors"
+                                                    className="w-1/2 px-4 text-left align-middle cursor-pointer select-none hover:text-zinc-50 transition-colors"
                                                     onClick={() => requestSort('title')}
                                                 >
                                                     <div className="flex items-center text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -262,7 +262,7 @@
                                                     </div>
                                                 </th>
                                                 <th
-                                                    className="w-1/3 px-4 text-left align-middle cursor-pointer select-none hover:text-zinc-900 transition-colors"
+                                                    className="w-1/3 px-4 text-left align-middle cursor-pointer select-none hover:text-zinc-50 transition-colors"
                                                     onClick={() => requestSort('artist')}
                                                 >
                                                     <div className="flex items-center text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -274,22 +274,22 @@
                                                 </th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-zinc-100">
+                                        <tbody className="divide-y divide-zinc-800">
                                             {sortedLibrary.map((file) => (
-                                                <tr key={file.id} className="h-14 hover:bg-zinc-50 transition-colors">
+                                                <tr key={file.id} className="h-14 hover:bg-zinc-800/50 transition-colors">
                                                     <td className="px-4 align-middle">
                                                         <div className="flex flex-col gap-1.5 min-w-0">
                                                             <div className="flex items-center gap-3">
-                                                                <div className={`shrink-0 p-1.5 rounded-sm border transition-all ${file.status === 'synced' ? 'bg-zinc-50 border-zinc-100 text-zinc-400' : 'bg-zinc-900 border-zinc-900 text-zinc-50'}`}>
+                                                                <div className={`shrink-0 p-1.5 rounded-sm border transition-all ${file.status === 'synced' ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : 'bg-zinc-50 border-zinc-50 text-zinc-900'}`}>
                                                                     <IFileAudio c="h-3.5 w-3.5" />
                                                                 </div>
-                                                                <span className="font-medium text-sm truncate text-zinc-900">{file.title}</span>
+                                                                <span className="font-medium text-sm truncate text-zinc-100">{file.title}</span>
                                                             </div>
                                                             {file.status !== 'synced' && (
                                                                 <div className="pl-10 pr-2">
-                                                                    <div className="h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
+                                                                    <div className="h-1 w-full bg-zinc-700 rounded-full overflow-hidden">
                                                                         <div
-                                                                            className="h-full bg-zinc-900 transition-all duration-300 ease-in-out"
+                                                                            className="h-full bg-zinc-50 transition-all duration-300 ease-in-out"
                                                                             style={{ width: `${file.progress || 0}%` }}
                                                                         />
                                                                     </div>
@@ -302,7 +302,7 @@
                                                     </td>
                                                     <td className="px-4 align-middle text-right">
                                                         {file.status !== 'synced' && (
-                                                            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-zinc-600 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-zinc-400 bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded-full whitespace-nowrap">
                                                                 {file.status}
                                                             </span>
                                                         )}
@@ -313,8 +313,8 @@
                                                 <tr>
                                                     <td colSpan="3" className="h-48 text-center">
                                                         <div className="flex flex-col items-center justify-center gap-2">
-                                                            <IMusic c="h-8 w-8 text-zinc-200" />
-                                                            <p className="text-xs font-medium text-zinc-400">No results found in library</p>
+                                                            <IMusic c="h-8 w-8 text-zinc-700" />
+                                                            <p className="text-xs font-medium text-zinc-500">No results found in library</p>
                                                         </div>
                                                     </td>
                                                 </tr>
