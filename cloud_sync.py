@@ -56,6 +56,10 @@ def fetch_liked_tracks():
     """Fetch the 10 most recent likes from SoundCloud."""
     url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id={SC_CLIENT_ID}&limit=10"
     
+    # Redacted URL for logging
+    log_url = f"https://api-v2.soundcloud.com/users/{SC_USER_ID}/likes?client_id=REDACTED&limit=10"
+    print(f"🔍 Fetching likes from: {log_url}")
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "application/json",
@@ -67,15 +71,27 @@ def fetch_liked_tracks():
         if not token.lower().startswith("oauth "):
             token = f"OAuth {token}"
         headers["Authorization"] = token
+        print("🔍 Using OAuth token.")
 
     try:
         resp = requests.get(url, headers=headers)
+        print(f"🔍 SoundCloud Response Status: {resp.status_code}")
+        
         if resp.status_code == 401:
             log_to_supabase("Auth Error", "SoundCloud API", "error")
             print("❌ SoundCloud Unauthorized (401). Check SC_OAUTH_TOKEN.")
             return None
+        
         resp.raise_for_status()
-        return resp.json().get('collection', [])
+        data = resp.json()
+        collection = data.get('collection', [])
+        print(f"🔍 Found {len(collection)} tracks in collection.")
+        
+        if len(collection) == 0:
+            # Log a snippet of the raw response if empty
+            print(f"🔍 Raw response snippet: {resp.text[:200]}")
+            
+        return collection
     except Exception as e:
         print(f"SoundCloud fetch error: {e}")
         return None
