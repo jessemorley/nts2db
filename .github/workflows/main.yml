@@ -1,7 +1,7 @@
-name: Hourly Music Sync
+name: Daily Music Sync
 on:
   schedule:
-    - cron: '0 * * * *' # Runs every hour
+    - cron: '0 0 * * *' # Runs once daily at midnight UTC
   workflow_dispatch: # This adds a "Run now" button in GitHub
 
 jobs:
